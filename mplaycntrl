@@ -1,0 +1,194 @@
+#!/bin/bash
+# First argument should be command, command should be
+# play play whats in the queue, optional arg of directory to play/watch for files
+# add, accepts list of files
+# remove remove list of files
+# clean clesr all the queues
+
+
+MUSIC_DIR=`readlink -f $1`
+DYN_PL_FILE=/tmp/mplayer.list
+PLAYED_FILE=/tmp/mplayer.played
+TOPLAY_FILE=/tmp/mplayer.toplay
+MPLAYER=/usr/bin/mplayer
+
+PLAYED=""
+echo DIR $MUSIC_DIR
+echo DYN_PL_FILE $DYN_PL_FILE
+
+COUNT=0
+SLEEP=0
+
+function cleanup_file {
+	FILE=$1
+	TMP_FILE=$FILE.tmp
+	echo $FILE
+	if [[ ! -e $FILE ]]; then
+		touch $FILE
+	fi
+	touch $FILE.tmp
+	while read line; do
+		if [[ -e $line ]]; then
+			echo $line >> $FILE.tmp
+		fi
+	done < $FILE
+	mv $TMP_FILE $FILE
+}
+
+function add_files {
+	FILE=$1
+	shift
+	FILES=$*
+	#echo $FILES
+	for n in $FILES; do
+		#check file isn't there already
+		FULLNAME=`readlink -f $n`
+		if [[ `grep $FULLNAME $FILE` == "" ]]; then
+			echo $FULLNAME >> $FILE
+			echo file $FULLNAME added
+		else
+			echo file already $FULLNAME in list to play
+		fi
+	done
+}
+
+function rem_files {
+	FILE=$1
+	shift
+	FILES=$*
+	#echo $FILES
+	TMP_FILE=$FILE.tmp
+	if [[ -e $TMP_FILE_ ]]; then
+		rm $TMP_FILE
+	fi
+	touch $TMP_FILE
+	while read line; do
+		#echo $FILES pipe grep $line
+		TMPNAME=`basename $line`
+		if [[ `echo "$FILES" | grep $TMPNAME` == "" ]]; then
+			echo $line >> $TMP_FILE
+		else
+			echo deleting $line from playlist
+		fi
+	done < $FILE
+	mv $TMP_FILE $_FILE
+}
+
+function clean_all {
+
+	rm $TOPLAY_FILE
+	rm $PLAYED_FILE
+	rm $DYN_PL_FILE
+
+}
+
+function make_playlist (
+	FILE=$RAND.playlist
+	touch $FILE
+	for n in $ITEM/*; do
+		echo `readlink -f $n` >> $FILE
+	done
+	return $FILE
+)
+
+function play {
+	cleanup_file $PLAYED_FILE
+	cleanup_file $TOPLAY_FILE
+	#logic: take the top one from the toplay, play it, add to played
+	#check  if directory, if directory expand and play in order
+	$ITEM=`head -n 1 $TOPLAY_FILE`
+	if [[ -d $ITEM ]]; then
+		#$PLAYLIST=`make_playlist $ITEM`
+		$MPLAYER -playlist $PLAYLIST
+		rm $PLAYLIST
+	else
+		$MPLAYER $ITEM
+	fi
+	rem_files $TOPLAY_FILE $ITEM
+	add_files $PLAYED_FILE $ITEM
+
+
+}
+
+function watch {
+	if [[ ! -d $1 ]]; then
+		echo "$1 not directory"
+		exit 1;
+	fi
+	cleanup_file $PLAYED_FILE
+	cleanup_file $TOPLAY_FILE
+	if [[ -e $DYN_PL_FILE ]]; then
+		rm $DYN_PL_FILE
+	fi
+	while (($COUNT < 20 )); do
+		for n in `ls $MUSIC_DIR`; do
+			if [[ `echo $PLAYED | grep $n` = "" ]]; then
+				SLEEP=0
+				echo $MUSIC_DIR/$n 
+				echo $MUSIC_DIR/$n  >> $DYN_PL_FILE
+				PLAYED="$PLAYED $MUSIC_DIR/$n"
+			fi
+		done
+		if [[ -e $DYN_PL_FILE ]]; then
+			mplayer -playlist $DYN_PL_FILE
+			rm $DYN_PL_FILE
+		fi
+		#Check for new files
+		COUNT=$(( COUNT + 1 ))
+		echo will sleep $SLEEP
+		sleep $SLEEP
+		echo PLAYED $PLAYED
+		SLEEP=$(( SLEEP + 5  ))
+		echo $COUNT
+	done
+}
+
+function usage {
+	echo $0 play [optional dir]
+	echo $0 add_files [list of files]
+	echo $0 rem_file [list of files]
+	echo $0 clean
+	echo $0 usage ..... this message
+}
+
+
+case $1 in
+	usage)
+		usage
+		exit 0
+		;;
+	add)
+		if [[ $2 = "" ]]; then
+			echo Needs files to add
+		else
+			shift
+			add_files $TOPLAY_FILE $*
+		fi
+		exit 0
+		;;
+	remove)
+		if [[ $2 = "" ]]; then
+			echo Needs files to remove
+		else
+			shift
+			rem_files $TOPLAY_FILE $*
+		fi
+		exit 0
+		;;
+	clean)
+		clean_all
+		exit 0
+		;;
+	play)
+		if [[ -d $2 ]]; then
+			play $2
+		else
+			play
+		fi
+		exit 0
+		;;
+	?)
+		usage
+		exit 0
+		;;
+esac
